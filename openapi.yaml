@@ -6,7 +6,7 @@ info:
     Fetches a public webpage and extracts title, meta description, canonical,
     H1, H2, Open Graph tags, language, and basic fetch diagnostics.
 servers:
-  - url: https://YOUR-DOMAIN.example.com
+  - url: https://zoroya-html-inspector.vercel.app
 paths:
   /api/extract:
     get:
