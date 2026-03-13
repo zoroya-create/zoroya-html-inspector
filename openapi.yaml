@@ -1,0 +1,77 @@
+openapi: 3.1.0
+info:
+  title: Zoroya HTML Inspector API
+  version: 1.0.0
+  description: |
+    Fetches a public webpage and extracts title, meta description, canonical,
+    H1, H2, Open Graph tags, language, and basic fetch diagnostics.
+servers:
+  - url: https://YOUR-DOMAIN.example.com
+paths:
+  /api/extract:
+    get:
+      operationId: extractPageMeta
+      summary: Extract HTML metadata and headings from a webpage
+      description: |
+        Fetch a public URL and return extracted title, description, canonical,
+        H1, H2, Open Graph tags, language, and notes about extraction quality.
+      parameters:
+        - in: query
+          name: url
+          required: true
+          schema:
+            type: string
+            format: uri
+          description: Public webpage URL to inspect.
+      responses:
+        '200':
+          description: Extraction result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  input_url:
+                    type: string
+                  final_url:
+                    type: string
+                  status:
+                    type: integer
+                  content_type:
+                    type: string
+                  title:
+                    type: string
+                    nullable: true
+                  meta_description:
+                    type: string
+                    nullable: true
+                  canonical:
+                    type: string
+                    nullable: true
+                  h1:
+                    type: array
+                    items:
+                      type: string
+                  h2:
+                    type: array
+                    items:
+                      type: string
+                  og_title:
+                    type: string
+                    nullable: true
+                  og_description:
+                    type: string
+                    nullable: true
+                  lang:
+                    type: string
+                    nullable: true
+                  notes:
+                    type: array
+                    items:
+                      type: string
+        '400':
+          description: Invalid request
+        '500':
+          description: Extraction error
