@@ -1,6 +1,9 @@
 import * as cheerio from 'cheerio';
-import dns from 'node:dns/promises';
+import dns from 'node:dns';
+import dnsPromises from 'node:dns/promises';
 import net from 'node:net';
+
+dns.setDefaultResultOrder('ipv4first');
 
 const PRIVATE_CIDR_PATTERNS = [
   /^10\./,
@@ -20,7 +23,8 @@ function isPrivateIp(ip) {
 
 async function assertSafePublicHostname(hostname) {
   if (!hostname) throw new Error('Missing hostname');
-  const results = await dns.lookup(hostname, { all: true });
+
+  const results = await dnsPromises.lookup(hostname, { all: true });
   if (!results.length) throw new Error('Hostname did not resolve');
 
   for (const entry of results) {
@@ -44,19 +48,29 @@ function firstNonEmpty(...values) {
   return null;
 }
 
+function toAbsoluteUrl(baseUrl, maybeRelative) {
+  const normalized = normalizeText(maybeRelative);
+  if (!normalized) return null;
+  try {
+    return new URL(normalized, baseUrl).toString();
+  } catch {
+    return normalized;
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
     return res.status(405).json({ ok: false, error: 'Method not allowed' });
   }
 
-  const { url } = req.query;
-  if (!url || Array.isArray(url)) {
+  const rawUrl = Array.isArray(req.query?.url) ? req.query.url[0] : req.query?.url;
+  if (!rawUrl || typeof rawUrl !== 'string') {
     return res.status(400).json({ ok: false, error: 'Query parameter "url" is required' });
   }
 
   let parsed;
   try {
-    parsed = new URL(url);
+    parsed = new URL(rawUrl);
   } catch {
     return res.status(400).json({ ok: false, error: 'Invalid URL' });
   }
@@ -70,15 +84,23 @@ export default async function handler(req, res) {
 
     const response = await fetch(parsed.toString(), {
       redirect: 'follow',
+      signal: AbortSignal.timeout(15000),
       headers: {
-        'user-agent': 'Zoroya-HTML-Inspector/1.0 (+Custom GPT Action)',
-        'accept': 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8'
-      }
+        'user-agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36 ZoroyaHTMLInspector/1.1',
+        'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'accept-language': 'ja,en-US;q=0.9,en;q=0.8',
+        'cache-control': 'no-cache',
+      },
     });
 
     const contentType = response.headers.get('content-type') || '';
     const finalUrl = response.url || parsed.toString();
     const notes = [];
+
+    if (!response.ok) {
+      notes.push(`Upstream responded with HTTP ${response.status}`);
+    }
 
     if (!contentType.includes('text/html') && !contentType.includes('application/xhtml+xml')) {
       notes.push('Response content-type is not HTML; extraction may be incomplete.');
@@ -92,7 +114,7 @@ export default async function handler(req, res) {
       $('meta[name="description"]').attr('content'),
       $('meta[property="description"]').attr('content')
     );
-    const canonical = firstNonEmpty($('link[rel="canonical"]').attr('href'));
+    const canonical = toAbsoluteUrl(finalUrl, $('link[rel="canonical"]').attr('href'));
     const ogTitle = firstNonEmpty($('meta[property="og:title"]').attr('content'));
     const ogDescription = firstNonEmpty($('meta[property="og:description"]').attr('content'));
     const lang = firstNonEmpty($('html').attr('lang'));
@@ -133,6 +155,10 @@ export default async function handler(req, res) {
     return res.status(500).json({
       ok: false,
       error: error instanceof Error ? error.message : 'Unknown error',
+      cause:
+        error && typeof error === 'object' && 'cause' in error
+          ? String(error.cause)
+          : null,
     });
   }
 }
